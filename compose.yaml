@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ttv
+      POSTGRES_USER: ttv
+      POSTGRES_PASSWORD: ttv
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ttv -d ttv"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  crawler:
+    build: .
+    profiles: ["crawler"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://ttv:ttv@postgres:5432/ttv?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
