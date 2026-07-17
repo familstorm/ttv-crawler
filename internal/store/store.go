@@ -155,6 +155,25 @@ func (s *Store) Claim(ctx context.Context, lease time.Duration) (*model.Job, err
         SELECT id, kind, url, priority, attempts, max_attempts, payload
         FROM crawl_jobs
         WHERE status='pending' AND next_attempt_at <= now()
+          AND (
+              kind='catalog'
+              OR (
+                  kind='story'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM crawl_jobs phase
+                      WHERE phase.kind='catalog'
+                        AND phase.status IN ('pending', 'processing')
+                  )
+              )
+              OR (
+                  kind='chapter'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM crawl_jobs phase
+                      WHERE phase.kind IN ('catalog', 'story')
+                        AND phase.status IN ('pending', 'processing')
+                  )
+              )
+          )
         ORDER BY priority DESC, id ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1`).Scan(&job.ID, &job.Kind, &job.URL, &job.Priority, &job.Attempts, &job.MaxAttempts, &job.Payload)

@@ -34,12 +34,12 @@ type Config struct {
 
 type Runner struct {
 	store   *store.Store
-	fetcher *fetcher.Fetcher
+	fetcher fetcher.PageFetcher
 	config  Config
 	logger  *slog.Logger
 }
 
-func New(s *store.Store, f *fetcher.Fetcher, cfg Config, logger *slog.Logger) *Runner {
+func New(s *store.Store, f fetcher.PageFetcher, cfg Config, logger *slog.Logger) *Runner {
 	return &Runner{store: s, fetcher: f, config: cfg, logger: logger}
 }
 

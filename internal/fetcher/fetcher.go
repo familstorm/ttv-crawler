@@ -401,6 +401,14 @@ type limiter struct {
 	random   *rand.Rand
 }
 
+// Limiter is exported for browser-backed fetching so every transport can share
+// the same politeness guarantees.
+type Limiter = limiter
+
+func NewLimiter(interval, jitter time.Duration) *Limiter {
+	return newLimiter(interval, jitter)
+}
+
 func newLimiter(interval, jitter time.Duration) *limiter {
 	return &limiter{
 		interval: interval,

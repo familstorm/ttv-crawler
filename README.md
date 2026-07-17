@@ -23,7 +23,7 @@ Bạn vẫn cần tự bảo đảm việc lưu và sử dụng nội dung phù 
 3. Chỉ sau khi các job metadata ưu tiên cao hơn đã hết, tải chương theo URL `/{slug}/{số_chương}`.
 4. Upsert dữ liệu và SHA-256 nội dung để chạy lại an toàn, không tạo bản ghi trùng.
 
-Queue ưu tiên `catalog (100) → story (80) → chapter (50)`. Nhờ đó khoảng 284 trang danh mục được phát hiện trước; sau đó metadata truyện được lưu trước khi bắt đầu phần nội dung lớn.
+Queue có phase gate, không chỉ dựa vào priority: `catalog → story → chapter`. Tất cả 284 trang danh mục phải hết `pending/processing` trước khi metadata truyện được claim; toàn bộ job story phải xong trước khi job chapter được claim. Nhờ vậy việc phát hiện danh sách luôn hoàn tất trước khi bắt đầu tải nội dung lớn.
 
 ## Chạy nhanh bằng Docker
 
