@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -220,8 +221,22 @@ func (f *Fetcher) fetchOnce(ctx context.Context, target string) (Result, time.Du
 	actions := chromedp.Tasks{
 		network.Enable(),
 		network.SetBlockedURLs().WithURLPatterns(blockedResourcePatterns),
-		chromedp.Navigate(target),
+		// chromedp.Navigate waits for the browser's load event. A page can
+		// keep subresources open indefinitely, so that behavior turns a usable
+		// document into a timeout. Issue the CDP navigation command directly,
+		// then wait only for the DOM we need to parse.
+		chromedp.ActionFunc(func(actionCtx context.Context) error {
+			_, _, errorText, _, err := page.Navigate(target).Do(actionCtx)
+			if err != nil {
+				return err
+			}
+			if errorText != "" {
+				return fmt.Errorf("page load error %s", errorText)
+			}
+			return nil
+		}),
 		chromedp.WaitReady("body", chromedp.ByQuery),
+		page.StopLoading(),
 		chromedp.Location(&finalURL),
 		chromedp.Evaluate(`document.contentType === "text/plain" ? document.body.innerText : document.documentElement.outerHTML`, &body),
 	}
