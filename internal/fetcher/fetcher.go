@@ -47,8 +47,6 @@ type Config struct {
 
 type Fetcher struct {
 	browserCtx       context.Context
-	tabCtx           context.Context
-	cancelTab        context.CancelFunc
 	cancelBrowser    context.CancelFunc
 	cancelAllocator  context.CancelFunc
 	browserMu        sync.Mutex
@@ -119,12 +117,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 		cancelAllocator()
 		return nil, fmt.Errorf("khởi động Chromium %s: %w", browserPath, err)
 	}
-	tabCtx, cancelTab := chromedp.NewContext(browserCtx)
 	logger.Info("Chromium transport sẵn sàng", "executable", browserPath)
 	return &Fetcher{
 		browserCtx:       browserCtx,
-		tabCtx:           tabCtx,
-		cancelTab:        cancelTab,
 		cancelBrowser:    cancelBrowser,
 		cancelAllocator:  cancelAllocator,
 		limiter:          newLimiter(cfg.Interval, cfg.Jitter),
@@ -137,9 +132,6 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 }
 
 func (f *Fetcher) Close() {
-	if f.cancelTab != nil {
-		f.cancelTab()
-	}
 	if f.cancelBrowser != nil {
 		f.cancelBrowser()
 	}
@@ -195,7 +187,12 @@ func (f *Fetcher) fetchOnce(ctx context.Context, target string) (Result, time.Du
 	f.browserMu.Lock()
 	defer f.browserMu.Unlock()
 
-	runCtx, cancelRun := context.WithTimeout(f.tabCtx, f.timeout)
+	// A failed navigation can leave a tab waiting on a broken connection.
+	// Create and close a tab per attempt so retries always start from a clean
+	// target while reusing the already-running Chromium process.
+	tabCtx, cancelTab := chromedp.NewContext(f.browserCtx)
+	defer cancelTab()
+	runCtx, cancelRun := context.WithTimeout(tabCtx, f.timeout)
 	defer cancelRun()
 	stopOnJobCancel := context.AfterFunc(ctx, cancelRun)
 	defer stopOnJobCancel()
