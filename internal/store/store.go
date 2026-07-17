@@ -455,6 +455,56 @@ func (s *Store) AdminStories(ctx context.Context, search string, limit, offset i
 	return stories, total, nil
 }
 
+func (s *Store) AdminJobs(ctx context.Context, kind model.JobKind, status string, limit, offset int) ([]model.AdminJob, int64, model.AdminQueueStats, error) {
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var total int64
+	if err := s.pool.QueryRow(ctx, `
+        SELECT count(*) FROM crawl_jobs
+        WHERE kind=$1 AND ($2='' OR status=$2)`, kind, status).Scan(&total); err != nil {
+		return nil, 0, model.AdminQueueStats{}, err
+	}
+	var stats model.AdminQueueStats
+	if err := s.pool.QueryRow(ctx, `
+        SELECT
+            count(*) FILTER (WHERE status='pending'),
+            count(*) FILTER (WHERE status='processing'),
+            count(*) FILTER (WHERE status='completed'),
+            count(*) FILTER (WHERE status='failed')
+        FROM crawl_jobs WHERE kind=$1`, kind).Scan(&stats.Pending, &stats.Processing, &stats.Completed, &stats.Failed); err != nil {
+		return nil, 0, stats, err
+	}
+	rows, err := s.pool.Query(ctx, `
+        SELECT id, url, status, priority, attempts, max_attempts,
+               next_attempt_at, COALESCE(last_error, ''), updated_at
+        FROM crawl_jobs
+        WHERE kind=$1 AND ($2='' OR status=$2)
+        ORDER BY CASE status WHEN 'processing' THEN 0 WHEN 'pending' THEN 1 WHEN 'failed' THEN 2 ELSE 3 END,
+                 updated_at DESC, id DESC
+        LIMIT $3 OFFSET $4`, kind, status, limit, offset)
+	if err != nil {
+		return nil, 0, stats, err
+	}
+	defer rows.Close()
+	jobs := make([]model.AdminJob, 0, limit)
+	for rows.Next() {
+		var job model.AdminJob
+		if err := rows.Scan(&job.ID, &job.URL, &job.Status, &job.Priority, &job.Attempts,
+			&job.MaxAttempts, &job.NextAttemptAt, &job.LastError, &job.UpdatedAt); err != nil {
+			return nil, 0, stats, err
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, stats, err
+	}
+	return jobs, total, stats, nil
+}
+
 func (s *Store) RetryFailed(ctx context.Context) (int64, error) {
 	command, err := s.pool.Exec(ctx, `
         UPDATE crawl_jobs SET status='pending', attempts=0, next_attempt_at=now(),

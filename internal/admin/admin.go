@@ -28,23 +28,31 @@ type Server struct {
 }
 
 type pageData struct {
-	Page      string
-	Overview  model.AdminOverview
-	Stories   []model.AdminStory
-	Search    string
-	PageNum   int
-	PageCount int
-	Total     int64
+	Page        string
+	Overview    model.AdminOverview
+	Stories     []model.AdminStory
+	Jobs        []model.AdminJob
+	Search      string
+	PageNum     int
+	PageCount   int
+	Total       int64
+	QueueKind   string
+	QueueLabel  string
+	QueueStatus string
+	QueueStats  model.AdminQueueStats
 }
 
 func New(s *store.Store, logger *slog.Logger) (*Server, error) {
 	templates, err := template.New("page").Funcs(template.FuncMap{
-		"number":      formatNumber,
-		"urlquery":    url.QueryEscape,
-		"add":         func(a, b int) int { return a + b },
-		"sub":         func(a, b int) int { return a - b },
-		"statusLabel": statusLabel,
-		"statusClass": statusClass,
+		"number":         formatNumber,
+		"urlquery":       url.QueryEscape,
+		"add":            func(a, b int) int { return a + b },
+		"sub":            func(a, b int) int { return a - b },
+		"statusLabel":    statusLabel,
+		"statusClass":    statusClass,
+		"jobStatusLabel": jobStatusLabel,
+		"jobStatusClass": jobStatusClass,
+		"kindLabel":      kindLabel,
 		"formatTime": func(value time.Time) string {
 			if value.IsZero() {
 				return "—"
@@ -69,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/admin", s.dashboard)
 	mux.HandleFunc("/admin/stories", s.stories)
+	mux.HandleFunc("/admin/queue", s.queue)
 	mux.HandleFunc("/healthz", s.health)
 	return loggingMiddleware(s.logger, mux)
 }
@@ -147,6 +156,41 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
+func (s *Server) queue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	kind, label, ok := queueKind(r.URL.Query().Get("kind"))
+	if !ok {
+		http.Error(w, "loại queue không hợp lệ", http.StatusBadRequest)
+		return
+	}
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if status != "" && !validJobStatus(status) {
+		http.Error(w, "trạng thái queue không hợp lệ", http.StatusBadRequest)
+		return
+	}
+	page := 1
+	if value, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && value > 0 {
+		page = value
+	}
+	jobs, total, stats, err := s.store.AdminJobs(r.Context(), kind, status, pageSize, (page-1)*pageSize)
+	if err != nil {
+		http.Error(w, "Không đọc được queue", http.StatusInternalServerError)
+		return
+	}
+	pageCount := int((total + pageSize - 1) / pageSize)
+	if pageCount == 0 {
+		pageCount = 1
+	}
+	if page > pageCount {
+		page = pageCount
+	}
+	s.render(w, pageData{Page: "queue", Jobs: jobs, PageNum: page, PageCount: pageCount, Total: total,
+		QueueKind: string(kind), QueueLabel: label, QueueStatus: status, QueueStats: stats})
+}
+
 func (s *Server) render(w http.ResponseWriter, data pageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.templates.ExecuteTemplate(w, "page", data); err != nil {
@@ -208,6 +252,64 @@ func statusClass(status string) string {
 		return "success"
 	case "paused":
 		return "muted"
+	default:
+		return "warning"
+	}
+}
+
+func queueKind(value string) (model.JobKind, string, bool) {
+	switch value {
+	case string(model.JobCatalog):
+		return model.JobCatalog, "Danh mục", true
+	case string(model.JobStory):
+		return model.JobStory, "Truyện", true
+	case string(model.JobChapter):
+		return model.JobChapter, "Chương", true
+	default:
+		return "", "", false
+	}
+}
+
+func kindLabel(value string) string {
+	_, label, ok := queueKind(value)
+	if !ok {
+		return value
+	}
+	return label
+}
+
+func validJobStatus(status string) bool {
+	switch status {
+	case "pending", "processing", "completed", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func jobStatusLabel(status string) string {
+	switch status {
+	case "pending":
+		return "Đang chờ"
+	case "processing":
+		return "Đang chạy"
+	case "completed":
+		return "Hoàn tất"
+	case "failed":
+		return "Lỗi"
+	default:
+		return status
+	}
+}
+
+func jobStatusClass(status string) string {
+	switch status {
+	case "completed":
+		return "success"
+	case "failed":
+		return "danger"
+	case "processing":
+		return "info"
 	default:
 		return "warning"
 	}

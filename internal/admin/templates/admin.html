@@ -19,7 +19,8 @@
     .phase { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; } .phase-item { border:1px solid var(--line); border-radius:12px; padding:15px; } .phase-title { font-weight:700; margin-bottom:8px; } .phase-stat { color:var(--muted); font-size:13px; }
     .toolbar { display:flex; gap:10px; align-items:center; margin:20px 0; } input { border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-width:280px; font:inherit; background:#fff; } button { border:0; border-radius:10px; background:var(--accent); color:#fff; padding:10px 16px; font:600 14px inherit; cursor:pointer; }
     table { width:100%; border-collapse:collapse; } th { color:var(--muted); font-size:11px; text-align:left; text-transform:uppercase; letter-spacing:.05em; padding:11px 10px; border-bottom:1px solid var(--line); } td { padding:13px 10px; border-bottom:1px solid var(--line); vertical-align:middle; } tr:last-child td { border-bottom:0; } .book { display:flex; align-items:center; gap:11px; min-width:280px; } .cover { width:36px; height:50px; border-radius:5px; object-fit:cover; background:var(--accent-soft); } .book-title { font-weight:700; } .slug, .muted { color:var(--muted); font-size:12px; }
-    .badge { display:inline-block; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:650; } .badge.success { color:var(--good); background:var(--good-soft); } .badge.warning { color:var(--warn); background:var(--warn-soft); } .badge.muted { color:var(--muted); background:#eef0f4; }
+    .badge { display:inline-block; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:650; } .badge.success { color:var(--good); background:var(--good-soft); } .badge.warning { color:var(--warn); background:var(--warn-soft); } .badge.muted { color:var(--muted); background:#eef0f4; } .badge.info { color:#315bb5; background:#e4ecff; } .badge.danger { color:#b42318; background:#fee4e2; }
+    .queue-nav { margin:8px 0 15px 12px; border-left:1px solid #393957; padding-left:8px; } .queue-nav a { font-size:12px; padding:5px 8px; margin:1px 0; } .queue-nav a.active { background:#39365e; }
     .progress { display:flex; align-items:center; gap:8px; min-width:135px; } .bar { height:7px; border-radius:9px; background:#ececf4; flex:1; overflow:hidden; } .bar i { display:block; height:100%; background:var(--accent); border-radius:inherit; } .pagination { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; } .pagination a { border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 11px; color:var(--muted); } .pagination a.current { background:var(--accent-soft); color:var(--accent); border-color:#d8d3ff; }
     @media(max-width:900px) { .shell { grid-template-columns:1fr; } aside { padding:16px; } .brand { padding-bottom:12px; } nav { display:flex; gap:6px; } nav a { margin:0; } .side-note { display:none; } main { padding:24px 16px; } .cards { grid-template-columns:repeat(2,1fr); } .panel { overflow-x:auto; } }
     @media(max-width:560px) { .cards, .phase { grid-template-columns:1fr; } .topline { display:block; } .toolbar { display:block; } input { min-width:0; width:100%; margin-bottom:8px; } }
@@ -32,6 +33,12 @@
     <nav>
       <a href="/admin" class="{{if eq .Page "dashboard"}}active{{end}}">Tổng quan</a>
       <a href="/admin/stories" class="{{if eq .Page "stories"}}active{{end}}">Danh sách truyện</a>
+      <a href="/admin/queue?kind=catalog" class="{{if and (eq .Page "queue") (eq .QueueKind "catalog")}}active{{end}}">Queue</a>
+      <div class="queue-nav">
+        <a href="/admin/queue?kind=catalog" class="{{if and (eq .Page "queue") (eq .QueueKind "catalog")}}active{{end}}">↳ Danh mục</a>
+        <a href="/admin/queue?kind=story" class="{{if and (eq .Page "queue") (eq .QueueKind "story")}}active{{end}}">↳ Truyện</a>
+        <a href="/admin/queue?kind=chapter" class="{{if and (eq .Page "queue") (eq .QueueKind "chapter")}}active{{end}}">↳ Chương</a>
+      </div>
     </nav>
     <div class="side-note">Kho lưu trữ cá nhân<br>Go · PostgreSQL · Chromium</div>
   </aside>
@@ -45,17 +52,29 @@
       <div class="card"><div class="label">Đang chờ</div><div class="value">{{number .Overview.Queue.Pending}}</div><div class="hint">sẽ được xử lý tiếp</div></div>
     </div>
     <div class="panel"><h2>Tiến trình theo phase</h2><div class="phase">
-      <div class="phase-item"><div class="phase-title">01 · Danh mục</div><div class="phase-stat"><strong>{{number .Overview.CatalogComplete}}</strong> hoàn tất · {{number .Overview.CatalogPending}} chờ</div></div>
-      <div class="phase-item"><div class="phase-title">02 · Metadata truyện</div><div class="phase-stat"><strong>{{number .Overview.StoryComplete}}</strong> hoàn tất · {{number .Overview.StoryPending}} chờ</div></div>
-      <div class="phase-item"><div class="phase-title">03 · Chương</div><div class="phase-stat"><strong>{{number .Overview.ChapterComplete}}</strong> hoàn tất · {{number .Overview.ChapterPending}} chờ</div></div>
+      <div class="phase-item"><div class="phase-title">01 · Danh mục</div><div class="phase-stat"><strong>{{number .Overview.CatalogComplete}}</strong> hoàn tất · {{number .Overview.CatalogPending}} chờ</div><a class="muted" href="/admin/queue?kind=catalog">Xem queue →</a></div>
+      <div class="phase-item"><div class="phase-title">02 · Metadata truyện</div><div class="phase-stat"><strong>{{number .Overview.StoryComplete}}</strong> hoàn tất · {{number .Overview.StoryPending}} chờ</div><a class="muted" href="/admin/queue?kind=story">Xem queue →</a></div>
+      <div class="phase-item"><div class="phase-title">03 · Chương</div><div class="phase-stat"><strong>{{number .Overview.ChapterComplete}}</strong> hoàn tất · {{number .Overview.ChapterPending}} chờ</div><a class="muted" href="/admin/queue?kind=chapter">Xem queue →</a></div>
     </div></div>
     <div class="panel"><div class="topline" style="margin:0"><div><h2 style="margin:0">Kho dữ liệu</h2><div class="sub">Mở danh sách để xem metadata và tiến độ từng truyện.</div></div><a href="/admin/stories" style="color:var(--accent);font-weight:700">Xem danh sách →</a></div></div>
-  {{else}}
+  {{else if eq .Page "stories"}}
     <div class="topline"><div><h1>Danh sách truyện</h1><div class="sub">{{number .Total}} truyện trong kho dữ liệu.</div></div></div>
     <form class="toolbar" method="get"><input name="q" value="{{.Search}}" placeholder="Tìm theo tiêu đề hoặc slug…"><button type="submit">Tìm kiếm</button></form>
     <div class="panel"><table><thead><tr><th>Truyện</th><th>Tác giả</th><th>Trạng thái</th><th>Tiến độ chương</th><th>Cập nhật</th></tr></thead><tbody>
       {{range .Stories}}<tr><td><div class="book">{{if .CoverURL}}<img class="cover" src="{{.CoverURL}}" alt="">{{else}}<div class="cover"></div>{{end}}<div><div class="book-title">{{.Title}}</div><div class="slug">/{{.Slug}}</div></div></div></td><td>{{if .Author}}{{.Author}}{{else}}<span class="muted">Chưa rõ</span>{{end}}</td><td><span class="badge {{statusClass .Status}}">{{statusLabel .Status}}</span></td><td><div class="progress"><div class="bar"><i style="width:{{printf "%.0f" .Progress}}%"></i></div><span class="muted">{{number .Downloaded}}/{{number .ExpectedChapter}}</span></div></td><td class="muted">{{formatTime .UpdatedAt}}</td></tr>{{else}}<tr><td colspan="5" class="muted">Chưa có dữ liệu phù hợp.</td></tr>{{end}}
     </tbody></table><div class="pagination">{{if gt .PageNum 1}}<a href="/admin/stories?q={{urlquery .Search}}&page={{sub .PageNum 1}}">← Trước</a>{{end}}<a class="current">{{.PageNum}} / {{.PageCount}}</a>{{if lt .PageNum .PageCount}}<a href="/admin/stories?q={{urlquery .Search}}&page={{add .PageNum 1}}">Sau →</a>{{end}}</div></div>
+  {{else}}
+    <div class="topline"><div><h1>Queue · {{.QueueLabel}}</h1><div class="sub">{{number .Total}} job{{if .QueueStatus}} ở trạng thái {{jobStatusLabel .QueueStatus}}{{end}}.</div></div></div>
+    <div class="cards">
+      <div class="card"><div class="label">Đang chờ</div><div class="value">{{number .QueueStats.Pending}}</div><div class="hint">pending</div></div>
+      <div class="card"><div class="label">Đang chạy</div><div class="value">{{number .QueueStats.Processing}}</div><div class="hint">processing</div></div>
+      <div class="card"><div class="label">Hoàn tất</div><div class="value">{{number .QueueStats.Completed}}</div><div class="hint">completed</div></div>
+      <div class="card"><div class="label">Lỗi</div><div class="value">{{number .QueueStats.Failed}}</div><div class="hint">failed</div></div>
+    </div>
+    <div class="toolbar"><a class="badge {{if eq .QueueStatus ""}}info{{else}}muted{{end}}" href="/admin/queue?kind={{.QueueKind}}">Tất cả</a><a class="badge {{if eq .QueueStatus "pending"}}info{{else}}muted{{end}}" href="/admin/queue?kind={{.QueueKind}}&status=pending">Đang chờ</a><a class="badge {{if eq .QueueStatus "processing"}}info{{else}}muted{{end}}" href="/admin/queue?kind={{.QueueKind}}&status=processing">Đang chạy</a><a class="badge {{if eq .QueueStatus "completed"}}info{{else}}muted{{end}}" href="/admin/queue?kind={{.QueueKind}}&status=completed">Hoàn tất</a><a class="badge {{if eq .QueueStatus "failed"}}info{{else}}muted{{end}}" href="/admin/queue?kind={{.QueueKind}}&status=failed">Lỗi</a></div>
+    <div class="panel"><table><thead><tr><th>URL</th><th>Trạng thái</th><th>Attempts</th><th>Lần thử kế tiếp</th><th>Lỗi gần nhất</th><th>Cập nhật</th></tr></thead><tbody>
+      {{range .Jobs}}<tr><td style="max-width:390px;word-break:break-all"><a href="{{.URL}}" target="_blank" rel="noreferrer" class="book-title">{{.URL}}</a><div class="slug">priority {{.Priority}}</div></td><td><span class="badge {{jobStatusClass .Status}}">{{jobStatusLabel .Status}}</span></td><td>{{.Attempts}}/{{.MaxAttempts}}</td><td class="muted">{{formatTime .NextAttemptAt}}</td><td style="max-width:300px;word-break:break-word" class="muted">{{if .LastError}}{{.LastError}}{{else}}—{{end}}</td><td class="muted">{{formatTime .UpdatedAt}}</td></tr>{{else}}<tr><td colspan="6" class="muted">Không có job phù hợp.</td></tr>{{end}}
+    </tbody></table><div class="pagination">{{if gt .PageNum 1}}<a href="/admin/queue?kind={{.QueueKind}}&status={{.QueueStatus}}&page={{sub .PageNum 1}}">← Trước</a>{{end}}<a class="current">{{.PageNum}} / {{.PageCount}}</a>{{if lt .PageNum .PageCount}}<a href="/admin/queue?kind={{.QueueKind}}&status={{.QueueStatus}}&page={{add .PageNum 1}}">Sau →</a>{{end}}</div></div>
   {{end}}
   </main>
 </div>

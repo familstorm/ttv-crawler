@@ -42,7 +42,7 @@ docker compose --profile admin up -d --build admin
 open http://localhost:8080/admin
 ```
 
-CMS chỉ hiển thị dữ liệu, không có thao tác xoá/sửa và không bật xác thực; chỉ nên expose trong mạng tin cậy. Khi chạy Go trực tiếp, dùng `ttv-crawler admin` và đặt `ADMIN_ADDR` (mặc định `127.0.0.1:8080`).
+CMS chỉ hiển thị dữ liệu, không có thao tác xoá/sửa và không bật xác thực; chỉ nên expose trong mạng tin cậy. Menu Queue được tách thành `Danh mục`, `Truyện` và `Chương`, kèm lọc `pending`, `processing`, `completed`, `failed`. Khi chạy Go trực tiếp, dùng `ttv-crawler admin` và đặt `ADMIN_ADDR` (mặc định `127.0.0.1:8080`).
 
 Xem tiến độ ở terminal khác:
 

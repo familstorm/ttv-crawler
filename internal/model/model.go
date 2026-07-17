@@ -99,3 +99,22 @@ type AdminStory struct {
 	Progress        float64
 	UpdatedAt       time.Time
 }
+
+type AdminJob struct {
+	ID            int64
+	URL           string
+	Status        string
+	Priority      int
+	Attempts      int
+	MaxAttempts   int
+	NextAttemptAt time.Time
+	LastError     string
+	UpdatedAt     time.Time
+}
+
+type AdminQueueStats struct {
+	Pending    int64
+	Processing int64
+	Completed  int64
+	Failed     int64
+}
