@@ -25,6 +25,8 @@ type Config struct {
 	UserAgent         string
 	BrowserExecutable string
 	AdminAddr         string
+	PublicDir         string
+	CoverMaxBytes     int64
 	MaxJobAttempts    int
 	IdleExitAfter     time.Duration
 	LogLevel          string
@@ -50,6 +52,8 @@ func Load() (cfg Config, err error) {
 		UserAgent:         env("USER_AGENT", "TTVPersonalArchiver/1.0 (+personal offline reading; rate-limited)"),
 		BrowserExecutable: env("BROWSER_EXECUTABLE", ""),
 		AdminAddr:         env("ADMIN_ADDR", "127.0.0.1:8080"),
+		PublicDir:         env("PUBLIC_DIR", "public"),
+		CoverMaxBytes:     int64Env("COVER_MAX_BYTES", 5*1024*1024),
 		MaxJobAttempts:    intEnv("MAX_JOB_ATTEMPTS", 8),
 		IdleExitAfter:     durationEnv("IDLE_EXIT_AFTER", 0),
 		LogLevel:          strings.ToLower(env("LOG_LEVEL", "info")),

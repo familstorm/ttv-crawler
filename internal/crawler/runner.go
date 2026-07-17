@@ -32,15 +32,24 @@ type Config struct {
 	IdleExitAfter  time.Duration
 }
 
+type CoverDownloader interface {
+	Download(context.Context, string, string) (string, error)
+}
+
 type Runner struct {
 	store   *store.Store
 	fetcher fetcher.PageFetcher
+	cover   CoverDownloader
 	config  Config
 	logger  *slog.Logger
 }
 
-func New(s *store.Store, f fetcher.PageFetcher, cfg Config, logger *slog.Logger) *Runner {
-	return &Runner{store: s, fetcher: f, config: cfg, logger: logger}
+func New(s *store.Store, f fetcher.PageFetcher, cfg Config, logger *slog.Logger, coverDownloaders ...CoverDownloader) *Runner {
+	var coverDownloader CoverDownloader
+	if len(coverDownloaders) > 0 {
+		coverDownloader = coverDownloaders[0]
+	}
+	return &Runner{store: s, fetcher: f, cover: coverDownloader, config: cfg, logger: logger}
 }
 
 func (r *Runner) Seed(ctx context.Context, startURL string) error {
@@ -191,6 +200,16 @@ func (r *Runner) process(ctx context.Context, job *model.Job) (int, error) {
 		}
 		if err := r.store.SaveStory(ctx, story); err != nil {
 			return result.Status, err
+		}
+		if r.cover != nil && story.CoverURL != "" {
+			localURL, err := r.cover.Download(ctx, story.CoverURL, story.Slug)
+			if err != nil {
+				return result.Status, fmt.Errorf("tải ảnh bìa %s: %w", story.Title, err)
+			}
+			if err := r.store.UpdateStoryCover(ctx, story.URL, localURL); err != nil {
+				return result.Status, fmt.Errorf("lưu đường dẫn ảnh bìa %s: %w", story.Title, err)
+			}
+			r.logger.Info("đã lưu ảnh bìa", "title", story.Title, "url", localURL)
 		}
 		if err := r.store.EnqueueChapters(ctx, story.URL, story.ExpectedChapterCount, r.config.MaxJobAttempts); err != nil {
 			return result.Status, err

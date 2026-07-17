@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/familstorm/crawler-truyen-ttv/internal/admin"
 	"github.com/familstorm/crawler-truyen-ttv/internal/config"
+	"github.com/familstorm/crawler-truyen-ttv/internal/cover"
 	"github.com/familstorm/crawler-truyen-ttv/internal/crawler"
 	"github.com/familstorm/crawler-truyen-ttv/internal/fetcher"
 	"github.com/familstorm/crawler-truyen-ttv/internal/store"
@@ -54,7 +56,7 @@ func run() error {
 
 	switch command {
 	case "admin":
-		server, err := admin.New(db, logger)
+		server, err := admin.New(db, logger, cfg.PublicDir)
 		if err != nil {
 			return fmt.Errorf("khởi tạo admin CMS: %w", err)
 		}
@@ -83,12 +85,23 @@ func run() error {
 			return err
 		}
 		defer f.Close()
+		coverDownloader, err := cover.New(cover.Config{
+			Directory: filepath.Join(cfg.PublicDir, "covers"),
+			Timeout:   cfg.HTTPTimeout,
+			Interval:  cfg.RequestInterval,
+			Jitter:    cfg.RequestJitter,
+			UserAgent: cfg.UserAgent,
+			MaxBytes:  cfg.CoverMaxBytes,
+		})
+		if err != nil {
+			return fmt.Errorf("khởi tạo cover downloader: %w", err)
+		}
 		runner := crawler.New(db, f, crawler.Config{
 			Workers:        cfg.Workers,
 			MaxJobAttempts: cfg.MaxJobAttempts,
 			CatalogMaxPage: cfg.CatalogMaxPage,
 			IdleExitAfter:  cfg.IdleExitAfter,
-		}, logger)
+		}, logger, coverDownloader)
 		if err := runner.Seed(ctx, cfg.StartURL); err != nil {
 			return err
 		}

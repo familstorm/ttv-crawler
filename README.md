@@ -93,6 +93,8 @@ ttv-crawler retry-failed  chạy lại job đã hết số lần retry
 | `HTTP_RETRIES` | `3` | Retry trong một lần xử lý HTTP |
 | `BROWSER_EXECUTABLE` | tự dò | Đường dẫn Chromium/Chrome; Docker đã đặt sẵn |
 | `ADMIN_ADDR` | `127.0.0.1:8080` | Địa chỉ lắng nghe CMS admin |
+| `PUBLIC_DIR` | `public` | Thư mục static dùng để lưu ảnh bìa |
+| `COVER_MAX_BYTES` | `5242880` | Kích thước tối đa mỗi ảnh bìa |
 | `MAX_JOB_ATTEMPTS` | `8` | Retry bền vững của queue |
 | `MAX_RESPONSE_BYTES` | `8388608` | Chặn response HTML lớn bất thường |
 | `IDLE_EXIT_AFTER` | `0s` | `0` là chờ liên tục |
@@ -102,6 +104,7 @@ Không nên giảm `REQUEST_INTERVAL`; nếu website phản hồi chậm hoặc 
 ## Dữ liệu đã chuẩn hoá
 
 - `stories`: metadata và số chương dự kiến.
+- Ảnh bìa: tải về `public/covers/`, lưu URL local `/static/covers/...` và dùng volume `public_data` chung với CMS.
 - `authors`, `genres`, `story_genres`: quan hệ chuẩn hoá, chống tên/slug trùng.
 - `chapters`: tiêu đề, nội dung plain text, số chương và SHA-256.
 - `crawl_jobs`: queue có lease, retry, backoff và trạng thái lỗi.

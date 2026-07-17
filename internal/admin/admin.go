@@ -25,6 +25,7 @@ type Server struct {
 	store     *store.Store
 	logger    *slog.Logger
 	templates *template.Template
+	publicDir string
 }
 
 type pageData struct {
@@ -42,7 +43,7 @@ type pageData struct {
 	QueueStats  model.AdminQueueStats
 }
 
-func New(s *store.Store, logger *slog.Logger) (*Server, error) {
+func New(s *store.Store, logger *slog.Logger, publicDirs ...string) (*Server, error) {
 	templates, err := template.New("page").Funcs(template.FuncMap{
 		"number":         formatNumber,
 		"urlquery":       url.QueryEscape,
@@ -63,7 +64,11 @@ func New(s *store.Store, logger *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{store: s, logger: logger, templates: templates}, nil
+	publicDir := "public"
+	if len(publicDirs) > 0 && strings.TrimSpace(publicDirs[0]) != "" {
+		publicDir = publicDirs[0]
+	}
+	return &Server{store: s, logger: logger, templates: templates, publicDir: publicDir}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -78,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin", s.dashboard)
 	mux.HandleFunc("/admin/stories", s.stories)
 	mux.HandleFunc("/admin/queue", s.queue)
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(s.publicDir))))
 	mux.HandleFunc("/healthz", s.health)
 	return loggingMiddleware(s.logger, mux)
 }

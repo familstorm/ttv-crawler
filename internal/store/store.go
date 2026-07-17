@@ -291,7 +291,9 @@ func (s *Store) SaveStory(ctx context.Context, story model.Story) error {
         ON CONFLICT (source_url) DO UPDATE SET
             source_slug=EXCLUDED.source_slug, title=EXCLUDED.title,
             normalized_title=EXCLUDED.normalized_title, author_id=EXCLUDED.author_id,
-            summary=EXCLUDED.summary, cover_url=EXCLUDED.cover_url, status=EXCLUDED.status,
+			summary=EXCLUDED.summary,
+			cover_url=CASE WHEN stories.cover_url LIKE '/static/%' THEN stories.cover_url ELSE EXCLUDED.cover_url END,
+			status=EXCLUDED.status,
             rating=EXCLUDED.rating, rating_count=EXCLUDED.rating_count,
             view_count=EXCLUDED.view_count, follower_count=EXCLUDED.follower_count,
             expected_chapter_count=EXCLUDED.expected_chapter_count,
@@ -321,6 +323,13 @@ func (s *Store) SaveStory(ctx context.Context, story model.Story) error {
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *Store) UpdateStoryCover(ctx context.Context, sourceURL, localURL string) error {
+	_, err := s.pool.Exec(ctx, `
+        UPDATE stories SET cover_url=$2, updated_at=now()
+        WHERE source_url=$1`, sourceURL, localURL)
+	return err
 }
 
 func (s *Store) EnqueueChapters(ctx context.Context, storyURL string, count, maxAttempts int) error {
