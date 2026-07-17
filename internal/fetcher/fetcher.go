@@ -48,6 +48,8 @@ type Config struct {
 
 type Fetcher struct {
 	browserCtx       context.Context
+	tabCtx           context.Context
+	cancelTab        context.CancelFunc
 	cancelBrowser    context.CancelFunc
 	cancelAllocator  context.CancelFunc
 	browserMu        sync.Mutex
@@ -114,16 +116,21 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 	)
 	allocatorCtx, cancelAllocator := chromedp.NewExecAllocator(ctx, opts...)
 	browserCtx, cancelBrowser := chromedp.NewContext(allocatorCtx)
-	startCtx, cancelStart := context.WithTimeout(browserCtx, cfg.Timeout)
-	defer cancelStart()
-	if err := chromedp.Run(startCtx); err != nil {
+	// The first Run allocates the browser. It must use the long-lived browser
+	// context: chromedp documents that timing out this first Run stops the
+	// entire browser, which previously made every subsequent request fail with
+	// "context canceled".
+	if err := chromedp.Run(browserCtx); err != nil {
 		cancelBrowser()
 		cancelAllocator()
 		return nil, fmt.Errorf("khởi động Chromium %s: %w", browserPath, err)
 	}
+	tabCtx, cancelTab := chromedp.NewContext(browserCtx)
 	logger.Info("Chromium transport sẵn sàng", "executable", browserPath)
 	return &Fetcher{
 		browserCtx:       browserCtx,
+		tabCtx:           tabCtx,
+		cancelTab:        cancelTab,
 		cancelBrowser:    cancelBrowser,
 		cancelAllocator:  cancelAllocator,
 		limiter:          newLimiter(cfg.Interval, cfg.Jitter),
@@ -140,6 +147,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 }
 
 func (f *Fetcher) Close() {
+	if f.cancelTab != nil {
+		f.cancelTab()
+	}
 	if f.cancelBrowser != nil {
 		f.cancelBrowser()
 	}
@@ -244,9 +254,7 @@ func (f *Fetcher) fetchOnce(ctx context.Context, target string) (Result, time.Du
 	f.browserMu.Lock()
 	defer f.browserMu.Unlock()
 
-	tabCtx, cancelTab := chromedp.NewContext(f.browserCtx)
-	defer cancelTab()
-	runCtx, cancelRun := context.WithTimeout(tabCtx, f.timeout)
+	runCtx, cancelRun := context.WithTimeout(f.tabCtx, f.timeout)
 	defer cancelRun()
 	stopOnJobCancel := context.AfterFunc(ctx, cancelRun)
 	defer stopOnJobCancel()
