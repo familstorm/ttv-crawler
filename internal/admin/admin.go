@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"html/template"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/familstorm/crawler-truyen-ttv/internal/model"
 	"github.com/familstorm/crawler-truyen-ttv/internal/store"
+	"github.com/jackc/pgx/v5"
 )
 
 //go:embed templates/*.html
@@ -82,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/admin", s.dashboard)
 	mux.HandleFunc("/admin/stories", s.stories)
+	mux.HandleFunc("/admin/api/stories/detail", s.storyDetail)
 	mux.HandleFunc("/admin/queue", s.queue)
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(s.publicDir))))
 	mux.HandleFunc("/healthz", s.health)
@@ -160,6 +163,31 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+func (s *Server) storyDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	slug := strings.Trim(strings.TrimSpace(r.URL.Query().Get("slug")), "/")
+	if slug == "" {
+		http.Error(w, "thiếu slug truyện", http.StatusBadRequest)
+		return
+	}
+	detail, err := s.store.AdminStoryDetail(r.Context(), slug)
+	if errors.Is(err, pgx.ErrNoRows) {
+		http.Error(w, "không tìm thấy truyện", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Không đọc được chi tiết truyện", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(detail); err != nil {
+		s.logger.Error("ghi chi tiết truyện thất bại", "error", err)
+	}
 }
 
 func (s *Server) queue(w http.ResponseWriter, r *http.Request) {

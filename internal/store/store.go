@@ -464,6 +464,45 @@ func (s *Store) AdminStories(ctx context.Context, search string, limit, offset i
 	return stories, total, nil
 }
 
+func (s *Store) AdminStoryDetail(ctx context.Context, slug string) (model.AdminStoryDetail, error) {
+	var detail model.AdminStoryDetail
+	err := s.pool.QueryRow(ctx, `
+        SELECT s.id, s.title, s.source_slug, s.source_url, COALESCE(a.name, ''),
+               s.summary, s.status, s.cover_url, COALESCE(s.rating, 0)::float8,
+               s.rating_count, s.view_count, s.follower_count, s.expected_chapter_count,
+               count(c.id)::int, s.updated_at
+        FROM stories s
+        LEFT JOIN authors a ON a.id=s.author_id
+        LEFT JOIN chapters c ON c.story_id=s.id
+        WHERE s.source_slug=$1
+        GROUP BY s.id, a.name`, slug).Scan(
+		&detail.ID, &detail.Title, &detail.Slug, &detail.SourceURL, &detail.Author,
+		&detail.Summary, &detail.Status, &detail.CoverURL, &detail.Rating,
+		&detail.RatingCount, &detail.ViewCount, &detail.FollowerCount,
+		&detail.ExpectedChapter, &detail.Downloaded, &detail.UpdatedAt)
+	if err != nil {
+		return detail, err
+	}
+	rows, err := s.pool.Query(ctx, `
+        SELECT g.name
+        FROM genres g
+        JOIN story_genres sg ON sg.genre_id=g.id
+        WHERE sg.story_id=$1
+        ORDER BY g.name`, detail.ID)
+	if err != nil {
+		return detail, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var genre string
+		if err := rows.Scan(&genre); err != nil {
+			return detail, err
+		}
+		detail.Genres = append(detail.Genres, genre)
+	}
+	return detail, rows.Err()
+}
+
 func (s *Store) AdminJobs(ctx context.Context, kind model.JobKind, status string, limit, offset int) ([]model.AdminJob, int64, model.AdminQueueStats, error) {
 	if limit < 1 || limit > 100 {
 		limit = 20

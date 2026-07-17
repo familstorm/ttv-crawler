@@ -100,6 +100,25 @@ type AdminStory struct {
 	UpdatedAt       time.Time
 }
 
+type AdminStoryDetail struct {
+	ID              int64     `json:"id"`
+	Title           string    `json:"title"`
+	Slug            string    `json:"slug"`
+	SourceURL       string    `json:"source_url"`
+	Author          string    `json:"author"`
+	Summary         string    `json:"summary"`
+	Status          string    `json:"status"`
+	CoverURL        string    `json:"cover_url"`
+	Genres          []string  `json:"genres"`
+	Rating          float64   `json:"rating"`
+	RatingCount     int       `json:"rating_count"`
+	ViewCount       int64     `json:"view_count"`
+	FollowerCount   int64     `json:"follower_count"`
+	ExpectedChapter int       `json:"expected_chapters"`
+	Downloaded      int       `json:"downloaded_chapters"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 type AdminJob struct {
 	ID            int64
 	URL           string
