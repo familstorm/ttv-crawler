@@ -24,7 +24,6 @@ type Config struct {
 	MaxResponseBytes  int64
 	UserAgent         string
 	BrowserExecutable string
-	RobotsFailOpen    bool
 	MaxJobAttempts    int
 	IdleExitAfter     time.Duration
 	LogLevel          string
@@ -49,7 +48,6 @@ func Load() (cfg Config, err error) {
 		MaxResponseBytes:  int64Env("MAX_RESPONSE_BYTES", 8*1024*1024),
 		UserAgent:         env("USER_AGENT", "TTVPersonalArchiver/1.0 (+personal offline reading; rate-limited)"),
 		BrowserExecutable: env("BROWSER_EXECUTABLE", ""),
-		RobotsFailOpen:    boolEnv("ROBOTS_FAIL_OPEN", true),
 		MaxJobAttempts:    intEnv("MAX_JOB_ATTEMPTS", 8),
 		IdleExitAfter:     durationEnv("IDLE_EXIT_AFTER", 0),
 		LogLevel:          strings.ToLower(env("LOG_LEVEL", "info")),

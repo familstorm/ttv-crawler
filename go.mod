@@ -7,7 +7,6 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/temoto/robotstxt v1.1.2
 	golang.org/x/text v0.34.0
 )
 

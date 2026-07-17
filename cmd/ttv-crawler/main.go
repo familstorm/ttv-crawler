@@ -58,7 +58,6 @@ func run() error {
 		Retries:           cfg.HTTPRetries,
 		MaxResponseBytes:  cfg.MaxResponseBytes,
 		UserAgent:         cfg.UserAgent,
-		RobotsFailOpen:    cfg.RobotsFailOpen,
 		BrowserExecutable: cfg.BrowserExecutable,
 	}, logger)
 	if err != nil {

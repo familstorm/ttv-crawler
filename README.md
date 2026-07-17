@@ -9,7 +9,7 @@ Hệ thống ưu tiên giảm tải cho website nguồn:
 - Chặn CSS, JavaScript, ảnh, font và media trong browser vì HTML nguồn đã server-rendered.
 - Mặc định một request trên toàn tiến trình mỗi 3 giây, cộng jitter ngẫu nhiên 0–1,5 giây.
 - Mặc định một worker; kể cả tăng worker, rate limiter vẫn dùng chung.
-- Đọc và tuân thủ `robots.txt`, gồm cả `Disallow` và `Crawl-delay`, nếu máy chủ trả được nội dung.
+- Không thực hiện request tới `robots.txt`; vẫn giữ giới hạn tốc độ, retry và chỉ truy cập đúng domain nguồn.
 - Tôn trọng `Retry-After`, `429`, `503` và exponential backoff.
 - Không đăng nhập, không giải CAPTCHA, không vượt paywall và không gọi API nội bộ của trang.
 - Queue lưu trong PostgreSQL, vì vậy có thể dừng bằng `Ctrl+C` rồi chạy tiếp mà không tải lại phần đã hoàn tất.
@@ -84,7 +84,6 @@ ttv-crawler retry-failed  chạy lại job đã hết số lần retry
 | `HTTP_RETRIES` | `3` | Retry trong một lần xử lý HTTP |
 | `BROWSER_EXECUTABLE` | tự dò | Đường dẫn Chromium/Chrome; Docker đã đặt sẵn |
 | `MAX_JOB_ATTEMPTS` | `8` | Retry bền vững của queue |
-| `ROBOTS_FAIL_OPEN` | `true` | Tiếp tục có cảnh báo nếu không tải được robots; đặt `false` để dừng nghiêm ngặt |
 | `MAX_RESPONSE_BYTES` | `8388608` | Chặn response HTML lớn bất thường |
 | `IDLE_EXIT_AFTER` | `0s` | `0` là chờ liên tục |
 

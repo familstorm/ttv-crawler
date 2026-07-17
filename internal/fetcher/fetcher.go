@@ -16,7 +16,6 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
-	"github.com/temoto/robotstxt"
 )
 
 type Result struct {
@@ -42,7 +41,6 @@ type Config struct {
 	Retries           int
 	MaxResponseBytes  int64
 	UserAgent         string
-	RobotsFailOpen    bool
 	BrowserExecutable string
 }
 
@@ -58,12 +56,7 @@ type Fetcher struct {
 	timeout          time.Duration
 	maxResponseBytes int64
 	userAgent        string
-	robotsAgent      string
-	robotsFailOpen   bool
 	logger           *slog.Logger
-	robotsMu         sync.Mutex
-	robotsByOrigin   map[string]*robotstxt.RobotsData
-	robotsChecked    map[string]bool
 }
 
 type navigationState struct {
@@ -138,11 +131,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 		timeout:          cfg.Timeout,
 		maxResponseBytes: cfg.MaxResponseBytes,
 		userAgent:        cfg.UserAgent,
-		robotsAgent:      userAgentToken(cfg.UserAgent),
-		robotsFailOpen:   cfg.RobotsFailOpen,
 		logger:           logger,
-		robotsByOrigin:   make(map[string]*robotstxt.RobotsData),
-		robotsChecked:    make(map[string]bool),
 	}, nil
 }
 
@@ -166,56 +155,7 @@ func (f *Fetcher) Fetch(ctx context.Context, target string) (Result, error) {
 	if parsed.Scheme != "https" || parsed.Hostname() != "tangthuvien.org" {
 		return Result{}, fmt.Errorf("từ chối crawl ngoài tangthuvien.org: %s", target)
 	}
-	if err := f.allowedByRobots(ctx, parsed); err != nil {
-		return Result{}, err
-	}
 	return f.fetchWithRetry(ctx, target)
-}
-
-func (f *Fetcher) allowedByRobots(ctx context.Context, target *url.URL) error {
-	origin := target.Scheme + "://" + target.Host
-	f.robotsMu.Lock()
-	defer f.robotsMu.Unlock()
-
-	if !f.robotsChecked[origin] {
-		robotsURL := origin + "/robots.txt"
-		result, err := f.fetchWithRetry(ctx, robotsURL)
-		switch {
-		case err == nil:
-			data, parseErr := robotstxt.FromBytes(result.Body)
-			if parseErr != nil {
-				err = fmt.Errorf("robots.txt không hợp lệ: %w", parseErr)
-			} else {
-				f.robotsByOrigin[origin] = data
-			}
-		case isHTTPStatus(err, http.StatusNotFound):
-			err = nil
-		}
-		if err != nil {
-			if !f.robotsFailOpen {
-				return fmt.Errorf("không kiểm tra được robots.txt (ROBOTS_FAIL_OPEN=false): %w", err)
-			}
-			f.logger.Warn("không tải được robots.txt; tiếp tục theo cấu hình", "url", robotsURL, "error", err)
-		}
-		f.robotsChecked[origin] = true
-	}
-
-	if data := f.robotsByOrigin[origin]; data != nil {
-		group := data.FindGroup(f.robotsAgent)
-		if group.CrawlDelay > 0 {
-			if f.limiter.EnsureInterval(group.CrawlDelay) {
-				f.logger.Info("áp dụng Crawl-delay từ robots.txt", "delay", group.CrawlDelay)
-			}
-		}
-		path := target.EscapedPath()
-		if target.RawQuery != "" {
-			path += "?" + target.RawQuery
-		}
-		if !group.Test(path) {
-			return fmt.Errorf("robots.txt không cho phép truy cập %s", target.String())
-		}
-	}
-	return nil
 }
 
 func (f *Fetcher) fetchWithRetry(ctx context.Context, target string) (Result, error) {
@@ -341,11 +281,6 @@ func retryable(err error) bool {
 	}
 }
 
-func isHTTPStatus(err error, status int) bool {
-	var httpErr *HTTPError
-	return errors.As(err, &httpErr) && httpErr.Status == status
-}
-
 func responseHeader(headers network.Headers, key string) string {
 	for name, value := range headers {
 		if strings.EqualFold(name, key) {
@@ -369,20 +304,6 @@ func parseRetryAfter(value string) time.Duration {
 		}
 	}
 	return 0
-}
-
-func userAgentToken(value string) string {
-	value = strings.TrimSpace(value)
-	if field := strings.Fields(value); len(field) > 0 {
-		value = field[0]
-	}
-	if token, _, ok := strings.Cut(value, "/"); ok {
-		value = token
-	}
-	if value == "" {
-		return "*"
-	}
-	return value
 }
 
 func findBrowser(configured string) (string, error) {
