@@ -94,6 +94,8 @@ type AdminStory struct {
 	Author          string
 	Status          string
 	CoverURL        string
+	Rating          float64
+	RatingCount     int
 	ExpectedChapter int
 	Downloaded      int
 	Progress        float64

@@ -434,7 +434,8 @@ func (s *Store) AdminStories(ctx context.Context, search string, limit, offset i
 	}
 	rows, err := s.pool.Query(ctx, `
         SELECT s.id, s.title, s.source_slug, COALESCE(a.name, ''), s.status,
-               s.cover_url, s.expected_chapter_count, count(c.id)::int,
+               s.cover_url, COALESCE(s.rating, 0)::float8, s.rating_count,
+               s.expected_chapter_count, count(c.id)::int,
                CASE WHEN s.expected_chapter_count=0 THEN 0
                     ELSE count(c.id)::float8 * 100 / s.expected_chapter_count END,
                s.updated_at
@@ -453,7 +454,8 @@ func (s *Store) AdminStories(ctx context.Context, search string, limit, offset i
 	for rows.Next() {
 		var story model.AdminStory
 		if err := rows.Scan(&story.ID, &story.Title, &story.Slug, &story.Author, &story.Status,
-			&story.CoverURL, &story.ExpectedChapter, &story.Downloaded, &story.Progress, &story.UpdatedAt); err != nil {
+			&story.CoverURL, &story.Rating, &story.RatingCount, &story.ExpectedChapter,
+			&story.Downloaded, &story.Progress, &story.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		stories = append(stories, story)
