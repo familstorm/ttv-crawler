@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/familstorm/crawler-truyen-ttv/internal/model"
@@ -385,6 +386,73 @@ func (s *Store) Stats(ctx context.Context) (model.QueueStats, error) {
 	}
 	err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM stories), (SELECT count(*) FROM chapters)`).Scan(&stats.Stories, &stats.Chapters)
 	return stats, err
+}
+
+func (s *Store) AdminOverview(ctx context.Context) (model.AdminOverview, error) {
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		return model.AdminOverview{}, err
+	}
+	overview := model.AdminOverview{Queue: stats}
+	err = s.pool.QueryRow(ctx, `
+        SELECT
+            count(*) FILTER (WHERE kind='catalog' AND status='pending'),
+            count(*) FILTER (WHERE kind='catalog' AND status='completed'),
+            count(*) FILTER (WHERE kind='story' AND status='pending'),
+            count(*) FILTER (WHERE kind='story' AND status='completed'),
+            count(*) FILTER (WHERE kind='chapter' AND status='pending'),
+            count(*) FILTER (WHERE kind='chapter' AND status='completed')
+        FROM crawl_jobs`).Scan(
+		&overview.CatalogPending, &overview.CatalogComplete,
+		&overview.StoryPending, &overview.StoryComplete,
+		&overview.ChapterPending, &overview.ChapterComplete)
+	return overview, err
+}
+
+func (s *Store) AdminStories(ctx context.Context, search string, limit, offset int) ([]model.AdminStory, int64, error) {
+	search = strings.TrimSpace(search)
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var total int64
+	if err := s.pool.QueryRow(ctx, `
+        SELECT count(*) FROM stories
+        WHERE ($1 = '' OR title ILIKE '%' || $1 || '%' OR source_slug ILIKE '%' || $1 || '%')`, search).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.pool.Query(ctx, `
+        SELECT s.id, s.title, s.source_slug, COALESCE(a.name, ''), s.status,
+               s.cover_url, s.expected_chapter_count, count(c.id)::int,
+               CASE WHEN s.expected_chapter_count=0 THEN 0
+                    ELSE count(c.id)::float8 * 100 / s.expected_chapter_count END,
+               s.updated_at
+        FROM stories s
+        LEFT JOIN authors a ON a.id=s.author_id
+        LEFT JOIN chapters c ON c.story_id=s.id
+        WHERE ($1 = '' OR s.title ILIKE '%' || $1 || '%' OR s.source_slug ILIKE '%' || $1 || '%')
+        GROUP BY s.id, a.name
+        ORDER BY s.updated_at DESC, s.id DESC
+        LIMIT $2 OFFSET $3`, search, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	stories := make([]model.AdminStory, 0, limit)
+	for rows.Next() {
+		var story model.AdminStory
+		if err := rows.Scan(&story.ID, &story.Title, &story.Slug, &story.Author, &story.Status,
+			&story.CoverURL, &story.ExpectedChapter, &story.Downloaded, &story.Progress, &story.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		stories = append(stories, story)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return stories, total, nil
 }
 
 func (s *Store) RetryFailed(ctx context.Context) (int64, error) {

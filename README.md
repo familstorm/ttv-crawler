@@ -35,6 +35,15 @@ docker compose up -d postgres
 docker compose --profile crawler up --build crawler
 ```
 
+Mở CMS quản trị tối giản để xem queue, phase crawl, danh sách truyện và tiến độ chương:
+
+```bash
+docker compose --profile admin up -d --build admin
+open http://localhost:8080/admin
+```
+
+CMS chỉ hiển thị dữ liệu, không có thao tác xoá/sửa và không bật xác thực; chỉ nên expose trong mạng tin cậy. Khi chạy Go trực tiếp, dùng `ttv-crawler admin` và đặt `ADMIN_ADDR` (mặc định `127.0.0.1:8080`).
+
 Xem tiến độ ở terminal khác:
 
 ```bash
@@ -83,6 +92,7 @@ ttv-crawler retry-failed  chạy lại job đã hết số lần retry
 | `WORKERS` | `1` | Số worker DB/parser, tối đa 8 |
 | `HTTP_RETRIES` | `3` | Retry trong một lần xử lý HTTP |
 | `BROWSER_EXECUTABLE` | tự dò | Đường dẫn Chromium/Chrome; Docker đã đặt sẵn |
+| `ADMIN_ADDR` | `127.0.0.1:8080` | Địa chỉ lắng nghe CMS admin |
 | `MAX_JOB_ATTEMPTS` | `8` | Retry bền vững của queue |
 | `MAX_RESPONSE_BYTES` | `8388608` | Chặn response HTML lớn bất thường |
 | `IDLE_EXIT_AFTER` | `0s` | `0` là chờ liên tục |

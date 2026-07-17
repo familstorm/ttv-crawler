@@ -76,3 +76,26 @@ type QueueStats struct {
 	Stories    int64
 	Chapters   int64
 }
+
+type AdminOverview struct {
+	Queue           QueueStats
+	CatalogPending  int64
+	CatalogComplete int64
+	StoryPending    int64
+	StoryComplete   int64
+	ChapterPending  int64
+	ChapterComplete int64
+}
+
+type AdminStory struct {
+	ID              int64
+	Title           string
+	Slug            string
+	Author          string
+	Status          string
+	CoverURL        string
+	ExpectedChapter int
+	Downloaded      int
+	Progress        float64
+	UpdatedAt       time.Time
+}

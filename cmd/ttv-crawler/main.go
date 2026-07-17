@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/familstorm/crawler-truyen-ttv/internal/admin"
 	"github.com/familstorm/crawler-truyen-ttv/internal/config"
 	"github.com/familstorm/crawler-truyen-ttv/internal/crawler"
 	"github.com/familstorm/crawler-truyen-ttv/internal/fetcher"
@@ -51,41 +52,47 @@ func run() error {
 		return err
 	}
 
-	f, err := fetcher.New(ctx, fetcher.Config{
-		Interval:          cfg.RequestInterval,
-		Jitter:            cfg.RequestJitter,
-		Timeout:           cfg.HTTPTimeout,
-		Retries:           cfg.HTTPRetries,
-		MaxResponseBytes:  cfg.MaxResponseBytes,
-		UserAgent:         cfg.UserAgent,
-		BrowserExecutable: cfg.BrowserExecutable,
-	}, logger)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	runner := crawler.New(db, f, crawler.Config{
-		Workers:        cfg.Workers,
-		MaxJobAttempts: cfg.MaxJobAttempts,
-		CatalogMaxPage: cfg.CatalogMaxPage,
-		IdleExitAfter:  cfg.IdleExitAfter,
-	}, logger)
-
 	switch command {
+	case "admin":
+		server, err := admin.New(db, logger)
+		if err != nil {
+			return fmt.Errorf("khởi tạo admin CMS: %w", err)
+		}
+		return server.Run(ctx, cfg.AdminAddr)
 	case "migrate":
 		logger.Info("migration đã cập nhật")
 		return nil
 	case "seed":
+		runner := crawler.New(db, nil, crawler.Config{CatalogMaxPage: cfg.CatalogMaxPage, MaxJobAttempts: cfg.MaxJobAttempts}, logger)
 		if err := runner.Seed(ctx, cfg.StartURL); err != nil {
 			return err
 		}
 		logger.Info("đã thêm URL khởi đầu", "url", cfg.StartURL)
 		return nil
 	case "run":
+		f, err := fetcher.New(ctx, fetcher.Config{
+			Interval:          cfg.RequestInterval,
+			Jitter:            cfg.RequestJitter,
+			Timeout:           cfg.HTTPTimeout,
+			Retries:           cfg.HTTPRetries,
+			MaxResponseBytes:  cfg.MaxResponseBytes,
+			UserAgent:         cfg.UserAgent,
+			BrowserExecutable: cfg.BrowserExecutable,
+		}, logger)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		runner := crawler.New(db, f, crawler.Config{
+			Workers:        cfg.Workers,
+			MaxJobAttempts: cfg.MaxJobAttempts,
+			CatalogMaxPage: cfg.CatalogMaxPage,
+			IdleExitAfter:  cfg.IdleExitAfter,
+		}, logger)
 		if err := runner.Seed(ctx, cfg.StartURL); err != nil {
 			return err
 		}
-		err := runner.Run(ctx)
+		err = runner.Run(ctx)
 		if errors.Is(err, context.Canceled) {
 			logger.Info("crawler đã dừng an toàn; lần chạy sau sẽ tiếp tục queue")
 			return nil
@@ -133,6 +140,7 @@ Usage:
   ttv-crawler seed          thêm START_URL vào queue
   ttv-crawler run           seed và chạy worker (mặc định)
   ttv-crawler status        xem tiến độ
-  ttv-crawler retry-failed  thử lại các job đã hết số lần retry
+	ttv-crawler retry-failed  thử lại các job đã hết số lần retry
+	 ttv-crawler admin         chạy admin CMS tại ADMIN_ADDR
 `)
 }

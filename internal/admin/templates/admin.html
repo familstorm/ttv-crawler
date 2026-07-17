@@ -1,0 +1,64 @@
+{{define "page"}}
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TTV Archive · Admin</title>
+  <style>
+    :root { color-scheme: light; --ink:#182230; --muted:#667085; --line:#e6eaf0; --bg:#f5f7fb; --card:#fff; --accent:#6d5dfc; --accent-soft:#eeecff; --good:#087443; --good-soft:#dff7eb; --warn:#9a5b00; --warn-soft:#fff1d6; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    a { color:inherit; text-decoration:none; } .shell { display:grid; grid-template-columns:240px 1fr; min-height:100vh; }
+    aside { background:#17172b; color:#d9dbed; padding:26px 18px; } .brand { color:#fff; font-size:19px; font-weight:750; letter-spacing:-.02em; padding:0 12px 30px; }
+    .brand span { color:#9a8fff; } nav a { display:block; border-radius:10px; padding:10px 12px; margin:4px 0; color:#aeb1ca; } nav a.active, nav a:hover { color:#fff; background:#2a2949; }
+    .side-note { color:#777b9c; font-size:12px; margin:35px 12px; } main { padding:34px 42px 56px; max-width:1400px; width:100%; }
+    .topline { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:28px; } h1 { margin:0; font-size:28px; letter-spacing:-.04em; } .sub { color:var(--muted); margin-top:5px; }
+    .cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin:20px 0 28px; } .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:19px; box-shadow:0 4px 16px #26324d08; }
+    .label { color:var(--muted); font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; } .value { font-size:28px; font-weight:750; margin-top:7px; letter-spacing:-.04em; } .hint { color:var(--muted); font-size:12px; margin-top:4px; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 4px 16px #26324d08; margin-top:18px; } .panel h2 { margin:0 0 16px; font-size:16px; }
+    .phase { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; } .phase-item { border:1px solid var(--line); border-radius:12px; padding:15px; } .phase-title { font-weight:700; margin-bottom:8px; } .phase-stat { color:var(--muted); font-size:13px; }
+    .toolbar { display:flex; gap:10px; align-items:center; margin:20px 0; } input { border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-width:280px; font:inherit; background:#fff; } button { border:0; border-radius:10px; background:var(--accent); color:#fff; padding:10px 16px; font:600 14px inherit; cursor:pointer; }
+    table { width:100%; border-collapse:collapse; } th { color:var(--muted); font-size:11px; text-align:left; text-transform:uppercase; letter-spacing:.05em; padding:11px 10px; border-bottom:1px solid var(--line); } td { padding:13px 10px; border-bottom:1px solid var(--line); vertical-align:middle; } tr:last-child td { border-bottom:0; } .book { display:flex; align-items:center; gap:11px; min-width:280px; } .cover { width:36px; height:50px; border-radius:5px; object-fit:cover; background:var(--accent-soft); } .book-title { font-weight:700; } .slug, .muted { color:var(--muted); font-size:12px; }
+    .badge { display:inline-block; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:650; } .badge.success { color:var(--good); background:var(--good-soft); } .badge.warning { color:var(--warn); background:var(--warn-soft); } .badge.muted { color:var(--muted); background:#eef0f4; }
+    .progress { display:flex; align-items:center; gap:8px; min-width:135px; } .bar { height:7px; border-radius:9px; background:#ececf4; flex:1; overflow:hidden; } .bar i { display:block; height:100%; background:var(--accent); border-radius:inherit; } .pagination { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; } .pagination a { border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 11px; color:var(--muted); } .pagination a.current { background:var(--accent-soft); color:var(--accent); border-color:#d8d3ff; }
+    @media(max-width:900px) { .shell { grid-template-columns:1fr; } aside { padding:16px; } .brand { padding-bottom:12px; } nav { display:flex; gap:6px; } nav a { margin:0; } .side-note { display:none; } main { padding:24px 16px; } .cards { grid-template-columns:repeat(2,1fr); } .panel { overflow-x:auto; } }
+    @media(max-width:560px) { .cards, .phase { grid-template-columns:1fr; } .topline { display:block; } .toolbar { display:block; } input { min-width:0; width:100%; margin-bottom:8px; } }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand">TTV <span>Archive</span></div>
+    <nav>
+      <a href="/admin" class="{{if eq .Page "dashboard"}}active{{end}}">Tổng quan</a>
+      <a href="/admin/stories" class="{{if eq .Page "stories"}}active{{end}}">Danh sách truyện</a>
+    </nav>
+    <div class="side-note">Kho lưu trữ cá nhân<br>Go · PostgreSQL · Chromium</div>
+  </aside>
+  <main>
+  {{if eq .Page "dashboard"}}
+    <div class="topline"><div><h1>Tổng quan</h1><div class="sub">Theo dõi tiến độ crawler và kho truyện.</div></div><a class="muted" href="/healthz">● hệ thống hoạt động</a></div>
+    <div class="cards">
+      <div class="card"><div class="label">Truyện</div><div class="value">{{number .Overview.Queue.Stories}}</div><div class="hint">metadata đã ghi nhận</div></div>
+      <div class="card"><div class="label">Chương</div><div class="value">{{number .Overview.Queue.Chapters}}</div><div class="hint">nội dung đã tải</div></div>
+      <div class="card"><div class="label">Đã hoàn tất</div><div class="value">{{number .Overview.Queue.Completed}}</div><div class="hint">job trong queue</div></div>
+      <div class="card"><div class="label">Đang chờ</div><div class="value">{{number .Overview.Queue.Pending}}</div><div class="hint">sẽ được xử lý tiếp</div></div>
+    </div>
+    <div class="panel"><h2>Tiến trình theo phase</h2><div class="phase">
+      <div class="phase-item"><div class="phase-title">01 · Danh mục</div><div class="phase-stat"><strong>{{number .Overview.CatalogComplete}}</strong> hoàn tất · {{number .Overview.CatalogPending}} chờ</div></div>
+      <div class="phase-item"><div class="phase-title">02 · Metadata truyện</div><div class="phase-stat"><strong>{{number .Overview.StoryComplete}}</strong> hoàn tất · {{number .Overview.StoryPending}} chờ</div></div>
+      <div class="phase-item"><div class="phase-title">03 · Chương</div><div class="phase-stat"><strong>{{number .Overview.ChapterComplete}}</strong> hoàn tất · {{number .Overview.ChapterPending}} chờ</div></div>
+    </div></div>
+    <div class="panel"><div class="topline" style="margin:0"><div><h2 style="margin:0">Kho dữ liệu</h2><div class="sub">Mở danh sách để xem metadata và tiến độ từng truyện.</div></div><a href="/admin/stories" style="color:var(--accent);font-weight:700">Xem danh sách →</a></div></div>
+  {{else}}
+    <div class="topline"><div><h1>Danh sách truyện</h1><div class="sub">{{number .Total}} truyện trong kho dữ liệu.</div></div></div>
+    <form class="toolbar" method="get"><input name="q" value="{{.Search}}" placeholder="Tìm theo tiêu đề hoặc slug…"><button type="submit">Tìm kiếm</button></form>
+    <div class="panel"><table><thead><tr><th>Truyện</th><th>Tác giả</th><th>Trạng thái</th><th>Tiến độ chương</th><th>Cập nhật</th></tr></thead><tbody>
+      {{range .Stories}}<tr><td><div class="book">{{if .CoverURL}}<img class="cover" src="{{.CoverURL}}" alt="">{{else}}<div class="cover"></div>{{end}}<div><div class="book-title">{{.Title}}</div><div class="slug">/{{.Slug}}</div></div></div></td><td>{{if .Author}}{{.Author}}{{else}}<span class="muted">Chưa rõ</span>{{end}}</td><td><span class="badge {{statusClass .Status}}">{{statusLabel .Status}}</span></td><td><div class="progress"><div class="bar"><i style="width:{{printf "%.0f" .Progress}}%"></i></div><span class="muted">{{number .Downloaded}}/{{number .ExpectedChapter}}</span></div></td><td class="muted">{{formatTime .UpdatedAt}}</td></tr>{{else}}<tr><td colspan="5" class="muted">Chưa có dữ liệu phù hợp.</td></tr>{{end}}
+    </tbody></table><div class="pagination">{{if gt .PageNum 1}}<a href="/admin/stories?q={{urlquery .Search}}&page={{sub .PageNum 1}}">← Trước</a>{{end}}<a class="current">{{.PageNum}} / {{.PageCount}}</a>{{if lt .PageNum .PageCount}}<a href="/admin/stories?q={{urlquery .Search}}&page={{add .PageNum 1}}">Sau →</a>{{end}}</div></div>
+  {{end}}
+  </main>
+</div>
+</body>
+</html>
+{{end}}
