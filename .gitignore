@@ -1,6 +1,8 @@
 .env
 /bin/
 /data/
+/backups/
+/volumes/
 coverage.out
 *.log
 .DS_Store

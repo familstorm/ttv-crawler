@@ -56,7 +56,7 @@ Dừng crawler an toàn:
 docker compose --profile crawler stop crawler
 ```
 
-PostgreSQL vẫn chạy và dữ liệu nằm trong volume `postgres_data`. Lệnh `docker compose down -v` sẽ xoá volume và toàn bộ dữ liệu, vì vậy không dùng `-v` nếu muốn giữ kho truyện.
+PostgreSQL vẫn chạy và dữ liệu được bind mount vào `./volumes/postgres_data` tại root project. Static dùng chung giữa crawler và CMS nằm ở `./volumes/public_data`. `docker compose down` không xoá hai thư mục này; cần backup trước khi tự xoá hoặc thay đổi nội dung bên trong.
 
 ## Chạy Go trực tiếp
 
@@ -104,7 +104,7 @@ Không nên giảm `REQUEST_INTERVAL`; nếu website phản hồi chậm hoặc 
 ## Dữ liệu đã chuẩn hoá
 
 - `stories`: metadata và số chương dự kiến.
-- Ảnh bìa: tải về `public/covers/`, lưu URL local `/static/covers/...` và dùng volume `public_data` chung với CMS.
+- Ảnh bìa: tải về `/app/public/covers/` trong container, lưu URL local `/static/covers/...` và dùng bind mount `./volumes/public_data` chung với CMS.
 - `authors`, `genres`, `story_genres`: quan hệ chuẩn hoá, chống tên/slug trùng.
 - `chapters`: tiêu đề, nội dung plain text, số chương và SHA-256.
 - `crawl_jobs`: queue có lease, retry, backoff và trạng thái lỗi.

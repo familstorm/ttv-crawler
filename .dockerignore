@@ -2,5 +2,6 @@
 .env
 bin
 data
+volumes
 coverage.out
 *.log
