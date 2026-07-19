@@ -23,6 +23,8 @@ var templateFS embed.FS
 
 const pageSize = 20
 
+var adminTimeZone = time.FixedZone("UTC+7", 7*60*60)
+
 type Server struct {
 	store     *store.Store
 	logger    *slog.Logger
@@ -56,12 +58,7 @@ func New(s *store.Store, logger *slog.Logger, publicDirs ...string) (*Server, er
 		"jobStatusLabel": jobStatusLabel,
 		"jobStatusClass": jobStatusClass,
 		"kindLabel":      kindLabel,
-		"formatTime": func(value time.Time) string {
-			if value.IsZero() {
-				return "—"
-			}
-			return value.Local().Format("02/01/2006 15:04")
-		},
+		"formatTime":     formatTime,
 	}).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, err
@@ -71,6 +68,13 @@ func New(s *store.Store, logger *slog.Logger, publicDirs ...string) (*Server, er
 		publicDir = publicDirs[0]
 	}
 	return &Server{store: s, logger: logger, templates: templates, publicDir: publicDir}, nil
+}
+
+func formatTime(value time.Time) string {
+	if value.IsZero() {
+		return "—"
+	}
+	return value.In(adminTimeZone).Format("02/01/2006 15:04")
 }
 
 func (s *Server) Handler() http.Handler {

@@ -152,14 +152,24 @@ func (f *Fetcher) Fetch(ctx context.Context, target string) (Result, error) {
 }
 
 func (f *Fetcher) fetchWithRetry(ctx context.Context, target string) (Result, error) {
+	return f.fetchWithRetryUsing(ctx, target, f.fetchOnce)
+}
+
+func (f *Fetcher) fetchWithRetryUsing(ctx context.Context, target string, fetchAttempt func(context.Context, string) (Result, time.Duration, error)) (Result, error) {
 	var lastErr error
 	for attempt := 1; attempt <= f.retries; attempt++ {
 		if err := f.limiter.Wait(ctx); err != nil {
 			return Result{}, err
 		}
-		result, retryAfter, err := f.fetchOnce(ctx, target)
+		result, retryAfter, err := fetchAttempt(ctx, target)
 		if err == nil {
 			return result, nil
+		}
+		// A caller cancellation means the worker/container is shutting down. Do
+		// not report it as a browser failure or start another retry; the runner
+		// will release the claimed job and restore its attempt count.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Result{}, ctxErr
 		}
 		lastErr = err
 		if attempt == f.retries || !retryable(err) {
