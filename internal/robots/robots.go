@@ -138,6 +138,12 @@ func (c *Client) Check(ctx context.Context, target string) (Decision, error) {
 
 	rules, err := c.rulesFor(ctx, parsed)
 	if err != nil {
+		// A cancelled caller is a shutdown, not a robots verdict. Report it as
+		// an error so the crawler releases the job instead of recording it as
+		// disallowed.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Decision{}, ctxErr
+		}
 		// Fail closed: an unreadable robots.txt disallows the whole host.
 		return Decision{
 			Allowed: false,
@@ -189,6 +195,17 @@ func (c *Client) rulesFor(ctx context.Context, u *url.URL) (*ruleSet, error) {
 		}
 		entry.expiresAt = time.Now().Add(ttl)
 		close(entry.ready)
+
+		// A fetch aborted by the caller's cancellation says nothing about the
+		// host, so drop the entry rather than letting a shutdown disallow it
+		// for the whole failure TTL.
+		if err != nil && ctx.Err() != nil {
+			c.mu.Lock()
+			if c.hosts[key] == entry {
+				delete(c.hosts, key)
+			}
+			c.mu.Unlock()
+		}
 	})
 
 	select {

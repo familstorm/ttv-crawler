@@ -2,6 +2,7 @@ package robots
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -254,5 +255,28 @@ func TestEmptyDisallowAllowsEverything(t *testing.T) {
 	group, _ := set.group("somebot")
 	if allowed, _ := group.allows("/anything"); !allowed {
 		t.Error("an empty Disallow must not restrict anything")
+	}
+}
+
+func TestCheckPropagatesContextCancellation(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+		_, _ = w.Write([]byte("User-agent: *\nDisallow:\n"))
+	}))
+	defer server.Close()
+	defer close(release)
+
+	client := New(Config{UserAgent: "TTVPersonalArchiver/1.0", HTTPClient: server.Client()})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := client.Check(ctx, server.URL+"/truyen")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled rather than a robots denial", err)
 	}
 }
