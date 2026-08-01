@@ -1,66 +1,133 @@
 # TTV Personal Archiver
 
-Crawler Go + Chromium headless + PostgreSQL để lưu truyện từ danh sách
-`https://tangthuvien.org/truyen?sort=rate&order=desc` cho mục đích đọc cá nhân.
+*[Tiếng Việt](README.vi.md)*
 
-Hệ thống ưu tiên giảm tải cho website nguồn:
+A Go crawler that archives a Vietnamese web-novel catalogue into PostgreSQL for
+offline personal reading. The source site renders its pages server-side but
+gates them behind client-side checks, so documents are fetched through headless
+Chromium rather than a bare HTTP client. The interesting part is not the
+scraping — it is that a run over ~284 catalogue pages and tens of thousands of
+chapters has to survive being killed halfway through, so all crawl state lives
+in Postgres and every write is idempotent. Stop it with `Ctrl+C`, start it
+again, and it resumes without refetching what it already has.
 
-- Dùng Chromium headless cho document request; chỉ truy cập `https://tangthuvien.org` và từ chối redirect sang domain khác.
-- Chặn CSS, JavaScript, ảnh, font và media trong browser vì HTML nguồn đã server-rendered.
-- Mặc định một request trên toàn tiến trình mỗi 3 giây, cộng jitter ngẫu nhiên 0–1,5 giây.
-- Mặc định một worker; kể cả tăng worker, rate limiter vẫn dùng chung.
-- Không thực hiện request tới `robots.txt`; vẫn giữ giới hạn tốc độ, retry và chỉ truy cập đúng domain nguồn.
-- Tôn trọng `Retry-After`, `429`, `503` và exponential backoff.
-- Không đăng nhập, không giải CAPTCHA, không vượt paywall và không gọi API nội bộ của trang.
-- Queue lưu trong PostgreSQL, vì vậy có thể dừng bằng `Ctrl+C` rồi chạy tiếp mà không tải lại phần đã hoàn tất.
+## Architecture
 
-Bạn vẫn cần tự bảo đảm việc lưu và sử dụng nội dung phù hợp với điều khoản của trang và quy định bản quyền nơi bạn sinh sống. Không nên phát hành lại dữ liệu đã tải.
-
-## Luồng xử lý
-
-1. Seed trực tiếp đủ 284 trang danh mục (`page=1` đến `page=284`), rồi quét hết danh sách để ghi nhận URL truyện trước khi website đóng.
-2. Sau khi catalog hết job ưu tiên, chuẩn hoá metadata toàn bộ truyện: tiêu đề, tác giả, mô tả, trạng thái, ảnh bìa, điểm, lượt xem/theo dõi, thể loại và số chương.
-3. Chỉ sau khi các job metadata ưu tiên cao hơn đã hết, tải chương theo URL `/{slug}/{số_chương}`.
-4. Upsert dữ liệu và SHA-256 nội dung để chạy lại an toàn, không tạo bản ghi trùng.
-
-Queue có phase gate, không chỉ dựa vào priority: `catalog → story → chapter`. Tất cả 284 trang danh mục phải hết `pending/processing` trước khi metadata truyện được claim; toàn bộ job story phải xong trước khi job chapter được claim. Nhờ vậy việc phát hiện danh sách luôn hoàn tất trước khi bắt đầu tải nội dung lớn.
-
-## Chạy nhanh bằng Docker
-
-Yêu cầu Docker có Compose:
-
-```bash
-cp .env.example .env
-docker compose up -d postgres
-docker compose --profile crawler up --build crawler
+```
+                 ┌──────────────┐
+  seed 284 URLs  │  crawl_jobs  │  phase gate: catalog → story → chapter
+  ───────────────▶   (queue)    │  claim = UPDATE … RETURNING under a lease
+                 └──────┬───────┘
+                        │ claim(lease 10m)
+                 ┌──────▼───────┐  robots.txt gate (per-host cache, fail-closed)
+   N workers ────▶   fetcher    │  shared rate limiter: 1 req / 3s + jitter
+                 │  (Chromium)  │  retry + exponential backoff, honours Retry-After
+                 └──────┬───────┘
+                        │ HTML
+                 ┌──────▼───────┐
+                 │    parser    │  catalogue rows / story metadata / chapter text
+                 └──────┬───────┘
+                        │
+                 ┌──────▼───────┐
+                 │    store     │  SHA-256 content hash, upsert on source_url
+                 └──────────────┘
 ```
 
-Mở CMS quản trị tối giản để xem queue, phase crawl, danh sách truyện và tiến độ chương:
+**Phase-gated queue.** Jobs are typed `catalog`, `story`, `chapter`, and the
+queue enforces the order as a gate rather than as a priority hint. Every
+catalogue page must leave `pending`/`processing` before a single story job can
+be claimed, and all story jobs must finish before chapter jobs unlock. Priority
+alone would let one slow catalogue page trail behind thousands of chapter
+downloads; a gate guarantees the full list of stories is discovered while the
+source is still reachable, before the crawler commits to the expensive part.
+
+**DB-backed lease.** Claiming a job is a single `UPDATE … RETURNING` that sets
+`status='processing'` and a `lease_until` ten minutes out, so concurrent workers
+can never claim the same row and no in-memory queue can lose one. A clean
+shutdown releases the job to `pending` immediately without spending a retry; a
+hard kill leaves the lease to expire, and the row returns to the queue on its
+own.
+
+**Retry and backoff.** Failures increment `attempts` and set `next_attempt_at`
+to `now() + 2^attempts` minutes, capped by `max_attempts`. Permanent client
+errors (`404`, `410`) and robots.txt denials skip the ladder and fail straight
+away — retrying them cannot change the answer. `429`, `5xx` and transport errors
+back off, and a `Retry-After` header takes precedence over the computed delay.
+
+**Idempotent upsert.** Every fetched document is hashed with SHA-256 and stored
+against its URL in `source_documents`; chapters carry a `content_hash` and
+upsert on `(story_id, chapter_number)`. Re-running a completed job rewrites the
+same row rather than duplicating it, which is what makes a resumed run safe.
+
+**robots.txt.** Each host's robots.txt is fetched once, parsed per RFC 9309 and
+cached for 12 hours. `Disallow`/`Allow` patterns and `Crawl-delay` are honoured;
+an advertised delay raises the shared rate limiter but never lowers the
+configured interval. If robots.txt cannot be read at all — transport error or
+`5xx` — the crawler fails closed and treats the host as fully disallowed. A
+`404` is not a failure: per the RFC it means no restrictions were published.
+
+## Schema
+
+| Table | Purpose |
+|---|---|
+| `stories` | Story metadata: title, summary, status, rating, view/follower counts, expected chapter count. Unique on `source_url` and `source_slug`. |
+| `chapters` | Chapter number, title, plain-text content and `content_hash`. Unique on `(story_id, chapter_number)`. |
+| `authors` | Deduplicated by `normalized_name`. |
+| `genres` | Deduplicated by `slug`. |
+| `story_genres` | Many-to-many join between stories and genres. |
+| `crawl_jobs` | The queue: `kind`, `status`, `attempts`, `next_attempt_at`, `lease_until`, `last_error`, `http_status`. |
+| `source_documents` | Per-URL fetch trace: HTTP status, ETag, Last-Modified, content hash. Raw HTML is not retained. |
+| `story_progress` | View joining stories to chapter counts, exposing `progress_percent`. |
+
+```sql
+-- How far along is each story?
+SELECT title, downloaded_chapter_count, expected_chapter_count, progress_percent
+FROM story_progress
+ORDER BY progress_percent DESC, title;
+```
+
+## Quick start (Docker)
+
+Requires Docker with Compose. No Go toolchain needed.
+
+```bash
+git clone https://github.com/familstorm/ttv-crawler.git
+cd ttv-crawler
+cp .env.example .env
+
+docker compose up -d postgres                        # database
+docker compose --profile crawler up --build crawler  # migrate, seed and crawl
+```
+
+Watch progress from another terminal:
+
+```bash
+docker compose run --rm crawler status
+# Queue: pending=812 processing=1 completed=2043 failed=0
+# Data:  stories=284 chapters=2043
+```
+
+There is a read-only admin UI for browsing the queue, crawl phase and per-story
+progress:
 
 ```bash
 docker compose --profile admin up -d --build admin
 open http://localhost:8080/admin
 ```
 
-CMS chỉ hiển thị dữ liệu, không có thao tác xoá/sửa và không bật xác thực; chỉ nên expose trong mạng tin cậy. Menu Queue được tách thành `Danh mục`, `Truyện` và `Chương`, kèm lọc `pending`, `processing`, `completed`, `failed`. Khi chạy Go trực tiếp, dùng `ttv-crawler admin` và đặt `ADMIN_ADDR` (mặc định `127.0.0.1:8080`).
+It has no authentication and no write actions, so keep it on a trusted network.
 
-Xem tiến độ ở terminal khác:
-
-```bash
-docker compose run --rm crawler status
-```
-
-Dừng crawler an toàn:
+Stop the crawler without losing work:
 
 ```bash
 docker compose --profile crawler stop crawler
 ```
 
-PostgreSQL vẫn chạy và dữ liệu được bind mount vào `./volumes/postgres_data` tại root project. Static dùng chung giữa crawler và CMS nằm ở `./volumes/public_data`. `docker compose down` không xoá hai thư mục này; cần backup trước khi tự xoá hoặc thay đổi nội dung bên trong.
+Postgres data is bind-mounted at `./volumes/postgres_data` and shared static
+files at `./volumes/public_data`. `docker compose down` leaves both in place.
 
-## Chạy Go trực tiếp
-
-Yêu cầu Go 1.26+ và PostgreSQL. File `.env` được tự đọc nếu có:
+<details>
+<summary>Running Go directly (requires Go 1.26+ and PostgreSQL)</summary>
 
 ```bash
 cp .env.example .env
@@ -69,75 +136,39 @@ go run ./cmd/ttv-crawler migrate
 go run ./cmd/ttv-crawler run
 ```
 
-Các lệnh CLI:
-
 ```text
-ttv-crawler migrate       tạo/cập nhật schema
-ttv-crawler seed          chỉ thêm START_URL vào queue
-ttv-crawler run           seed và chạy worker
-ttv-crawler status        xem số job/truyện/chương
-ttv-crawler retry-failed  chạy lại job đã hết số lần retry
+ttv-crawler migrate       create or update the schema
+ttv-crawler seed          enqueue START_URL only
+ttv-crawler run           seed, then run workers (default)
+ttv-crawler status        show queue, story and chapter counts
+ttv-crawler retry-failed  requeue jobs that exhausted their retries
+ttv-crawler admin         serve the admin UI on ADMIN_ADDR
 ```
 
-`run` mặc định chờ liên tục khi queue tạm rỗng, phù hợp với container. Đặt `IDLE_EXIT_AFTER=30s` nếu muốn tiến trình tự thoát sau khi queue rỗng 30 giây.
+`run` waits on an empty queue by default, which suits a container. Set
+`IDLE_EXIT_AFTER=30s` to make the process exit once the queue has been idle
+that long.
 
-## Cấu hình quan trọng
+</details>
 
-| Biến | Mặc định | Ý nghĩa |
+## Configuration
+
+Full list in [`.env.example`](.env.example). The ones that matter:
+
+| Variable | Default | Meaning |
 |---|---:|---|
-| `START_URL` | URL danh sách đã cung cấp | Điểm bắt đầu crawl |
-| `CATALOG_MAX_PAGE` | `284` | Tổng số trang danh mục được seed ngay khi khởi động |
-| `REQUEST_INTERVAL` | `3s` | Khoảng cách tối thiểu toàn cục; code không nhận dưới `1s` |
-| `REQUEST_JITTER` | `1.5s` | Jitter ngẫu nhiên cộng thêm |
-| `WORKERS` | `1` | Số worker DB/parser, tối đa 8 |
-| `HTTP_RETRIES` | `3` | Retry trong một lần xử lý HTTP |
-| `BROWSER_EXECUTABLE` | tự dò | Đường dẫn Chromium/Chrome; Docker đã đặt sẵn |
-| `ADMIN_ADDR` | `127.0.0.1:8080` | Địa chỉ lắng nghe CMS admin |
-| `PUBLIC_DIR` | `public` | Thư mục static dùng để lưu ảnh bìa |
-| `COVER_MAX_BYTES` | `5242880` | Kích thước tối đa mỗi ảnh bìa |
-| `MAX_JOB_ATTEMPTS` | `8` | Retry bền vững của queue |
-| `MAX_RESPONSE_BYTES` | `8388608` | Chặn response HTML lớn bất thường |
-| `IDLE_EXIT_AFTER` | `0s` | `0` là chờ liên tục |
+| `REQUEST_INTERVAL` | `3s` | Global minimum gap between requests. Values under `1s` are rejected. |
+| `REQUEST_JITTER` | `1.5s` | Random delay added on top. |
+| `WORKERS` | `1` | Parser/DB workers, max 8. Does not increase request rate — the limiter is shared. |
+| `ROBOTS_CACHE_TTL` | `12h` | How long a parsed robots.txt is reused per host. |
+| `MAX_JOB_ATTEMPTS` | `8` | Durable queue retry ceiling. |
+| `IDLE_EXIT_AFTER` | `0s` | `0` waits indefinitely. |
 
-Không nên giảm `REQUEST_INTERVAL`; nếu website phản hồi chậm hoặc có `429`, hãy tăng lên `5s`–`10s`. Tăng `WORKERS` không làm tăng tần suất HTTP vì mọi worker dùng chung một limiter.
+Raising `WORKERS` parallelises parsing and database writes only; all workers
+share one rate limiter, so HTTP pressure on the origin stays constant. If the
+source starts returning `429`, raise `REQUEST_INTERVAL` to `5s`–`10s`.
 
-## Dữ liệu đã chuẩn hoá
-
-- `stories`: metadata và số chương dự kiến.
-- Ảnh bìa: tải về `/app/public/covers/` trong container, lưu URL local `/static/covers/...` và dùng bind mount `./volumes/public_data` chung với CMS.
-- `authors`, `genres`, `story_genres`: quan hệ chuẩn hoá, chống tên/slug trùng.
-- `chapters`: tiêu đề, nội dung plain text, số chương và SHA-256.
-- `crawl_jobs`: queue có lease, retry, backoff và trạng thái lỗi.
-- `source_documents`: HTTP status, ETag/Last-Modified và hash của HTML nguồn, không lưu HTML thô.
-- `story_progress`: view tiện theo dõi phần trăm tải.
-
-Ví dụ đọc tiến độ:
-
-```sql
-SELECT title, downloaded_chapter_count, expected_chapter_count, progress_percent
-FROM story_progress
-ORDER BY progress_percent DESC, title;
-```
-
-Ví dụ lấy một truyện để đọc/xuất:
-
-```sql
-SELECT c.chapter_number, c.title, c.content
-FROM chapters c
-JOIN stories s ON s.id = c.story_id
-WHERE s.source_slug = 'lan-kha-ky-duyen'
-ORDER BY c.chapter_number;
-```
-
-## Xử lý lỗi
-
-- HTTP `404`, `410` và lỗi client vĩnh viễn được đánh dấu `failed` ngay để tránh gọi lặp vô ích.
-- `408`, `425`, `429` và lỗi máy chủ/mạng được retry với backoff.
-- Shutdown/restart bình thường trả job đang xử lý về `pending` ngay và không tính lượt retry; nếu tiến trình chết đột ngột, job tự về queue sau lease 10 phút.
-- Parser trả lỗi rõ ràng nếu không còn tìm thấy tiêu đề/nội dung; trường hợp website đổi HTML, job được giữ lại để retry sau khi cập nhật selector.
-- Dùng `retry-failed` sau khi đã sửa parser hoặc sự cố nguồn đã hết.
-
-## Kiểm thử
+## Testing
 
 ```bash
 go test ./...
@@ -145,4 +176,25 @@ go vet ./...
 docker compose config --quiet
 ```
 
-Parser test bao phủ HTML danh mục, metadata truyện, số liệu có dấu phân cách hàng nghìn, ngày tiếng Việt và nội dung chương.
+Coverage focuses on the parts most likely to break silently: the robots.txt
+parser and its fail-closed behaviour, rate-limiter interaction with
+`Crawl-delay`, retry classification, and HTML parsing across catalogue pages,
+story metadata (thousands separators, Vietnamese date formats) and chapter
+bodies.
+
+## Scope and limits
+
+This crawler talks to exactly one host and refuses redirects off it. It does not
+log in, solve CAPTCHAs, bypass paywalls or call private APIs, and it blocks CSS,
+JavaScript, images, fonts and media in the browser because the HTML it needs is
+already server-rendered.
+
+## License and intended use
+
+[MIT](LICENSE).
+
+Built for personal offline reading of content the operator can already access.
+The MIT licence covers this source code, not anything the crawler downloads —
+retrieved content remains under its original copyright. Check the target site's
+terms and your local law before running it, and do not redistribute what you
+collect.
