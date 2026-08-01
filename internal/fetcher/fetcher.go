@@ -17,7 +17,27 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+
+	"github.com/familstorm/crawler-truyen-ttv/internal/robots"
 )
+
+// ErrRobotsDisallowed is returned when robots.txt forbids a URL, or when
+// robots.txt could not be read and the fetcher fell closed. It is never
+// retried: re-requesting a disallowed URL is exactly the behaviour the check
+// exists to prevent.
+var ErrRobotsDisallowed = errors.New("robots.txt disallows this request")
+
+// RobotsError carries the reason a request was refused.
+type RobotsError struct {
+	URL    string
+	Reason string
+}
+
+func (e *RobotsError) Error() string {
+	return fmt.Sprintf("%s: %s", e.URL, e.Reason)
+}
+
+func (e *RobotsError) Unwrap() error { return ErrRobotsDisallowed }
 
 type Result struct {
 	Body         []byte
@@ -43,6 +63,16 @@ type Config struct {
 	MaxResponseBytes  int64
 	UserAgent         string
 	BrowserExecutable string
+	// RobotsCacheTTL overrides how long a parsed robots.txt is reused.
+	RobotsCacheTTL time.Duration
+	// RobotsClient injects a robots checker; nil builds the default one.
+	RobotsClient RobotsChecker
+}
+
+// RobotsChecker is the robots.txt boundary, kept as an interface so tests can
+// substitute a stub without a network round trip.
+type RobotsChecker interface {
+	Check(context.Context, string) (robots.Decision, error)
 }
 
 type Fetcher struct {
@@ -55,6 +85,7 @@ type Fetcher struct {
 	timeout          time.Duration
 	maxResponseBytes int64
 	userAgent        string
+	robots           RobotsChecker
 	logger           *slog.Logger
 }
 
@@ -118,6 +149,14 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 		return nil, fmt.Errorf("khởi động Chromium %s: %w", browserPath, err)
 	}
 	logger.Info("Chromium transport sẵn sàng", "executable", browserPath)
+	robotsChecker := cfg.RobotsClient
+	if robotsChecker == nil {
+		robotsChecker = robots.New(robots.Config{
+			UserAgent: cfg.UserAgent,
+			Timeout:   cfg.Timeout,
+			CacheTTL:  cfg.RobotsCacheTTL,
+		})
+	}
 	return &Fetcher{
 		browserCtx:       browserCtx,
 		cancelBrowser:    cancelBrowser,
@@ -127,6 +166,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Fetcher, error)
 		timeout:          cfg.Timeout,
 		maxResponseBytes: cfg.MaxResponseBytes,
 		userAgent:        cfg.UserAgent,
+		robots:           robotsChecker,
 		logger:           logger,
 	}, nil
 }
@@ -148,7 +188,35 @@ func (f *Fetcher) Fetch(ctx context.Context, target string) (Result, error) {
 	if parsed.Scheme != "https" || parsed.Hostname() != "tangthuvien.org" {
 		return Result{}, fmt.Errorf("từ chối crawl ngoài tangthuvien.org: %s", target)
 	}
+	if err := f.checkRobots(ctx, target); err != nil {
+		return Result{}, err
+	}
 	return f.fetchWithRetry(ctx, target)
+}
+
+// checkRobots consults robots.txt before a document request. A denial, or a
+// robots.txt that cannot be read, stops the request. An advertised Crawl-delay
+// raises the shared rate limiter but never lowers it, so the configured
+// REQUEST_INTERVAL stays a floor.
+func (f *Fetcher) checkRobots(ctx context.Context, target string) error {
+	if f.robots == nil {
+		return nil
+	}
+	decision, err := f.robots.Check(ctx, target)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return &RobotsError{URL: target, Reason: fmt.Sprintf("robots.txt check failed: %v", err)}
+	}
+	if decision.CrawlDelay > 0 {
+		f.limiter.RaiseInterval(decision.CrawlDelay)
+	}
+	if !decision.Allowed {
+		f.logger.Warn("bỏ qua URL do robots.txt", "url", target, "reason", decision.Reason)
+		return &RobotsError{URL: target, Reason: decision.Reason}
+	}
+	return nil
 }
 
 func (f *Fetcher) fetchWithRetry(ctx context.Context, target string) (Result, error) {
@@ -393,6 +461,20 @@ func (l *limiter) Wait(ctx context.Context) error {
 		return ctx.Err()
 	case <-timer.C:
 		return nil
+	}
+}
+
+// RaiseInterval lifts the pacing interval to at least d. It never lowers the
+// configured interval, so a host advertising a shorter Crawl-delay than
+// REQUEST_INTERVAL cannot make the crawler faster than its own setting.
+func (l *limiter) RaiseInterval(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if d > l.interval {
+		l.interval = d
 	}
 }
 

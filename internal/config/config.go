@@ -29,6 +29,7 @@ type Config struct {
 	CoverMaxBytes     int64
 	MaxJobAttempts    int
 	IdleExitAfter     time.Duration
+	RobotsCacheTTL    time.Duration
 	LogLevel          string
 }
 
@@ -56,6 +57,7 @@ func Load() (cfg Config, err error) {
 		CoverMaxBytes:     int64Env("COVER_MAX_BYTES", 5*1024*1024),
 		MaxJobAttempts:    intEnv("MAX_JOB_ATTEMPTS", 8),
 		IdleExitAfter:     durationEnv("IDLE_EXIT_AFTER", 0),
+		RobotsCacheTTL:    durationEnv("ROBOTS_CACHE_TTL", 12*time.Hour),
 		LogLevel:          strings.ToLower(env("LOG_LEVEL", "info")),
 	}
 
@@ -130,6 +132,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxJobAttempts < 1 {
 		errs = append(errs, errors.New("MAX_JOB_ATTEMPTS phải lớn hơn 0"))
+	}
+	if c.RobotsCacheTTL < time.Minute {
+		errs = append(errs, errors.New("ROBOTS_CACHE_TTL phải từ 1m trở lên"))
 	}
 	return errors.Join(errs...)
 }

@@ -157,6 +157,12 @@ func (r *Runner) worker(ctx context.Context, workerID int) error {
 			}
 			return ctx.Err()
 		}
+		// A robots.txt denial will not change on a retry, so burn the remaining
+		// attempts and let Fail record the job as permanently failed instead of
+		// re-requesting a URL the origin asked us not to touch.
+		if errors.Is(err, fetcher.ErrRobotsDisallowed) {
+			job.Attempts = job.MaxAttempts
+		}
 		if markErr := r.store.Fail(ctx, job, err, status); markErr != nil {
 			return fmt.Errorf("job %d lỗi (%v), đồng thời không lưu được trạng thái: %w", job.ID, err, markErr)
 		}

@@ -80,6 +80,7 @@ func run() error {
 			MaxResponseBytes:  cfg.MaxResponseBytes,
 			UserAgent:         cfg.UserAgent,
 			BrowserExecutable: cfg.BrowserExecutable,
+			RobotsCacheTTL:    cfg.RobotsCacheTTL,
 		}, logger)
 		if err != nil {
 			return err
